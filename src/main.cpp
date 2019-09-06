@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <SPI.h>
+#include <mcp_can.h>
 
 /*
 Kilometer Per Hour(km/hr) = Wheel Diameter(cm) × Revolution Per Minute(RPM) × 0.001885
@@ -9,6 +11,7 @@ Perimeter length = 2*PI*Wheel Diameter(cm)
 */
 const double FORMUL_0 (60.0/100000.0); //Kilometer Per Hour(km/hr) = RPM*Perimeter length(cm)*FORMUL_0
 
+void CanBroadcastSingleByteData(byte data);
 void PrintSerial();
 void PrintSerialRPM_Number_of_passes_based();
 void PrintSerialMagnetPassCount();
@@ -30,6 +33,18 @@ void loop();
 //HALL EFFECT A0 PİNİ
 const int HALL_ANALOG = A0;
 
+//CANBUS MCP2515 SPI CS PIN
+const int spiCSPin = 10;
+
+//CAN INIT
+MCP_CAN CAN(spiCSPin);
+
+//SETTINGS-HIZ-CANBUS
+unsigned long eskizaman_HIZ = 0;
+unsigned long TIMERLOOP_HIZ_milisn = 87;
+const int DATA_BYTE_HIZ = 1;
+const byte CAN_ID_HIZ = 0x14; //int 20
+
 //SETTINGS-Sabitler
 const short const_hall_precision = 20; //Ne kadar büyükse o kadar hassas ANCAK !!! Bu değer sensörün yerleştirildiği sistemin mıknatıslara uzaklığına ve kusursuzluğuna göre ayarlanmalıdır! Aksi taktirde değeri büyütmek hatalı sonuç üretecektir. Mıknatıslar sensöre ne kadar yakın ve kusursuz dizildi ise hall_precision değeri o kadar büyütülebilir. Değer minimum 10 olmalıdır! Maksimum sınır 128dir.
 const double wheel_diameter = 5.5; //cm centimeter //test düzeneği için 5.5
@@ -39,8 +54,8 @@ const unsigned short miknatis_sayisi = 8;
 //SETTINGS-Gecen Sure Bazlı Hesap Yapan Sabitler
 const unsigned short size_of_average_time_based = 8; //En son kaç tane geçişin ortalamasının alınacağı
 const unsigned short max_ms_control = 300; //İki mıknatıs arasında geçebilecek max süre
-const unsigned short vehicle_standing_broadcast_milisn = 500; // Araç dururken kaç msde bir hızı 0 olarak göndereceği
-const int stop_detection_count = 3; //Kaç vehicle_standing_broadcast_milisn süresinde mıknatıs algılanmazsa hızın sıfırlanacağı
+const unsigned short vehicle_can_broadcast_milisn = 50; // Araç dururken kaç msde bir hızı 0 olarak göndereceği
+const int stop_detection_count = 10; //Kaç vehicle_can_broadcast_milisn süresinde mıknatıs algılanmazsa hızın sıfırlanacağı
 
 //SETTINGS-Gecis Sayısı Bazlı Hesap Yapan Sabitler
 const unsigned short calculate_milisn_number_of_passes_based = 1000;
@@ -83,6 +98,14 @@ void setup()
   if(hall_precision<10) hall_precision=10;
   else if(hall_precision>128) hall_precision=128;
   //DEĞİŞTİRME!!
+
+  //CAN SETUP
+  while (CAN_OK != CAN.begin(CAN_500KBPS))
+  {
+    Serial.println("CAN BUS init Failed");
+    delay(100);
+  }
+  Serial.println("CAN BUS Shield Init OK!");
 }
 
 void loop()
@@ -97,7 +120,7 @@ void loop()
   }
 
   unsigned long stop_detection_simdiki_zaman = millis();
-  if (stop_detection_simdiki_zaman - stop_detection_eskizaman >= vehicle_standing_broadcast_milisn)
+  if (stop_detection_simdiki_zaman - stop_detection_eskizaman >= vehicle_can_broadcast_milisn)
   {
     if (stop_detection_duration == 0)
     {
@@ -113,8 +136,6 @@ void loop()
           AddSetRPM(0);
           CalculateRPM_TimeBased();
           CalculateSpeed_TimeBased();
-          Serial.println("---");
-          PrintSerial();
         }
       }
     }
@@ -124,6 +145,9 @@ void loop()
     }
     stop_detection_duration = 0;
     stop_detection_eskizaman = millis();
+    PrintSerial();
+    //CAN BROADCAST
+    CanBroadcastSingleByteData(speed_time_based);
   }
   HallEffectDetection();
 }
@@ -237,7 +261,6 @@ void MagnetDetected()
   AddSetRPM(hall_tek_gecis_rpm);
   CalculateRPM_TimeBased();
   CalculateSpeed_TimeBased();
-  PrintSerial();
 }
 
 void HallEffectDetection()
@@ -262,4 +285,10 @@ void HallEffectDetection()
       MagnetDetected();
     }
   }
+}
+
+void CanBroadcastSingleByteData(byte data)
+{
+  byte stmp[DATA_BYTE_HIZ] = {data};
+  CAN.sendMsgBuf(CAN_ID_HIZ, 0, DATA_BYTE_HIZ, stmp);
 }
