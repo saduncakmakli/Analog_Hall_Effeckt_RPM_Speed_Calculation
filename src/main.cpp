@@ -11,7 +11,7 @@ Perimeter length = 2*PI*Wheel Diameter(cm)
 */
 const double FORMUL_0 (60.0/100000.0); //Kilometer Per Hour(km/hr) = RPM*Perimeter length(cm)*FORMUL_0
 
-void CanBroadcastSingleByteData(byte data);
+void CanBroadcastSingleByteData(byte data, byte CAN_ID);
 void PrintSerial();
 void PrintSerialRPM_Number_of_passes_based();
 void PrintSerialMagnetPassCount();
@@ -40,22 +40,24 @@ const int spiCSPin = 10;
 MCP_CAN CAN(spiCSPin);
 
 //SETTINGS-HIZ-CANBUS
+bool CAN_ENABLE = 1; //1 ON, 0 OFF
 unsigned long eskizaman_HIZ = 0;
 unsigned long TIMERLOOP_HIZ_milisn = 87;
-const int DATA_BYTE_HIZ = 1;
+const int DATA_BYTE = 8;
 const byte CAN_ID_HIZ = 0x14; //int 20
 
 //SETTINGS-Sabitler
+//const double wheel_diameter = ?; //cm centimeter //test düzeneği için 5.5
+//const double perimeter_length = 2*PI*wheel_diameter; //cm centimeter
 const short const_hall_precision = 20; //Ne kadar büyükse o kadar hassas ANCAK !!! Bu değer sensörün yerleştirildiği sistemin mıknatıslara uzaklığına ve kusursuzluğuna göre ayarlanmalıdır! Aksi taktirde değeri büyütmek hatalı sonuç üretecektir. Mıknatıslar sensöre ne kadar yakın ve kusursuz dizildi ise hall_precision değeri o kadar büyütülebilir. Değer minimum 10 olmalıdır! Maksimum sınır 128dir.
-const double wheel_diameter = 5.5; //cm centimeter //test düzeneği için 5.5
-const double perimeter_length = 2*PI*wheel_diameter; //cm centimeter
+const double perimeter_length = 155;
 const unsigned short miknatis_sayisi = 8;
 
 //SETTINGS-Gecen Sure Bazlı Hesap Yapan Sabitler
-const unsigned short size_of_average_time_based = 8; //En son kaç tane geçişin ortalamasının alınacağı
+const unsigned short size_of_average_time_based = 30; //En son kaç tane geçişin ortalamasının alınacağı
 const unsigned short max_ms_control = 300; //İki mıknatıs arasında geçebilecek max süre
 const unsigned short vehicle_can_broadcast_milisn = 50; // Araç dururken kaç msde bir hızı 0 olarak göndereceği
-const int stop_detection_count = 10; //Kaç vehicle_can_broadcast_milisn süresinde mıknatıs algılanmazsa hızın sıfırlanacağı
+const int stop_detection_count = 5; //Kaç vehicle_can_broadcast_milisn süresinde mıknatıs algılanmazsa hızın sıfırlanacağı
 
 //SETTINGS-Gecis Sayısı Bazlı Hesap Yapan Sabitler
 const unsigned short calculate_milisn_number_of_passes_based = 1000;
@@ -100,12 +102,15 @@ void setup()
   //DEĞİŞTİRME!!
 
   //CAN SETUP
-  while (CAN_OK != CAN.begin(CAN_500KBPS))
+  if (CAN_ENABLE == 1)
   {
-    Serial.println("CAN BUS init Failed");
-    delay(100);
-  }
+    while (CAN_OK != CAN.begin(CAN_500KBPS))
+    {
+      Serial.println("CAN BUS init Failed");
+      delay(100);
+    }
   Serial.println("CAN BUS Shield Init OK!");
+  }
 }
 
 void loop()
@@ -147,7 +152,7 @@ void loop()
     stop_detection_eskizaman = millis();
     PrintSerial();
     //CAN BROADCAST
-    CanBroadcastSingleByteData(speed_time_based);
+    if (CAN_ENABLE == 1) CanBroadcastSingleByteData(speed_time_based, CAN_ID_HIZ);
   }
   HallEffectDetection();
 }
@@ -155,8 +160,8 @@ void loop()
 void PrintSerial()
 {
   //PrintSerialRPM_Number_of_passes_based();
-  PrintSerialRPM_TimeBased();
-  //PrintSerialSpeed_TimeBased();
+  //PrintSerialRPM_TimeBased();
+  PrintSerialSpeed_TimeBased();
   //PrintSerialMagnetPassCount();
 }
 
@@ -192,6 +197,7 @@ void CalculateRPM_TimeBased()
 void CalculateSpeed_TimeBased()
 {
   speed_time_based = rpm_time_based*perimeter_length*FORMUL_0;
+  speed_time_based = speed_time_based/3.33;
 }
 
 void Calculate_rpm_number_of_passes_based()
@@ -287,8 +293,20 @@ void HallEffectDetection()
   }
 }
 
-void CanBroadcastSingleByteData(byte data)
+void CanBroadcastSingleByteData(byte data, byte CAN_ID)
 {
-  byte stmp[DATA_BYTE_HIZ] = {data};
-  CAN.sendMsgBuf(CAN_ID_HIZ, 0, DATA_BYTE_HIZ, stmp);
+  byte stmp[DATA_BYTE] = {data,0,0,0,0,0,0,0};
+  CAN.sendMsgBuf(CAN_ID, 0, DATA_BYTE, stmp);
+}
+
+void CanBroadcastData(byte data, byte CAN_ID)
+{
+  short a = control_magnet_pass_count;
+  byte stmp[DATA_BYTE];
+  //stmp[0]=( a * (185.0/8.0)) % 256;
+  //stmp[1]=( a * (185.0/8.0)) / 256;
+  //stmp[2]=( a * (185.0/8.0)) / (256*256);
+  //stmp[3]=( a * (185.0/8.0)) / (256*256*256*256);
+
+  CAN.sendMsgBuf(CAN_ID, 0, DATA_BYTE, stmp);
 }
